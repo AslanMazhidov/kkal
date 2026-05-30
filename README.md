@@ -32,14 +32,26 @@ python3 -m http.server 8765
 ```
 Вне Telegram приложение работает на localStorage (данные только в этом браузере).
 
-## Деплой и подключение к боту
-1. **Хостинг (нужен HTTPS).** Залить папку на GitHub Pages / Vercel / Netlify.
-   Получится адрес вида `https://<твой>.github.io/kkal/`.
-2. **Бот в @BotFather:** `/newbot` (или взять существующий) → получить токен.
-3. **Mini App:** в @BotFather `/newapp` → выбрать бота → указать **Web App URL**
-   (адрес из п.1) → задать имя/иконку. Либо `/setmenubutton` → тот же URL.
-4. Открыть бота → кнопка меню/Mini App → приложение запустится внутри Telegram,
-   данные пойдут в CloudStorage и синхронизируются между устройствами.
+## Хостинг
+
+Развёрнуто на **GitHub Pages**: https://aslanmazhidov.github.io/kkal/
+Репозиторий: https://github.com/AslanMazhidov/kkal
+
+**Обновление сайта** — обычный `git push`, Pages пересоберётся автоматически:
+```bash
+git add -A && git commit -m "..." && git push
+```
+
+## Подключение к боту (@BotFather)
+Самый быстрый способ — кнопка меню:
+1. Открыть **@BotFather** → `/newbot` (или взять существующего бота).
+2. `/mybots` → выбрать бота → **Bot Settings → Menu Button → Configure menu button**.
+3. Прислать URL: `https://aslanmazhidov.github.io/kkal/`, затем текст кнопки (напр. `КБЖУ`).
+4. Открыть бота → нажать кнопку меню → приложение запустится внутри Telegram.
+   Данные пойдут в **CloudStorage** и будут синхронизироваться между устройствами.
+
+Альтернатива — `/newapp` (даёт прямую ссылку `t.me/<бот>/<имя>`): выбрать бота,
+указать тот же Web App URL, имя, иконку 512×512.
 
 ## Заметки
 - CloudStorage: ≤ 1024 ключей, значение ≤ 4096 байт. Данные разложены по ключам
