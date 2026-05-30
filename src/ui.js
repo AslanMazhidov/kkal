@@ -519,35 +519,79 @@ function openFoodEditor(food, onSaved) {
   nameCard.className = 'card';
   nameCard.appendChild(name.el);
 
-  const hint = document.createElement('div');
-  hint.className = 'section-title';
-  hint.textContent = 'На 100 грамм';
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const startPortion = (food?.portion || 0) > 0;
+  let mode = startPortion ? 'portion' : '100g'; // основа ввода Б/Ж/У
 
-  const kcalDisp = calcDisplay('Ккал (по Б/Ж/У)');
-  const p = field('Белки', { value: food?.per100.p ?? '', inputmode: 'decimal' });
-  const f = field('Жиры', { value: food?.per100.f ?? '', inputmode: 'decimal' });
-  const c = field('Углеводы', { value: food?.per100.c ?? '', inputmode: 'decimal' });
+  // переключатель основы: на 100 г или на порцию
+  const basis = document.createElement('div');
+  basis.className = 'segmented';
+  basis.innerHTML = `<button data-m="100g">На 100 г</button><button data-m="portion">На порцию</button>`;
 
+  // вес порции (виден только в режиме «на порцию»)
+  const weight = field('Вес 1 порции, г', { value: startPortion ? food.portion : '', inputmode: 'decimal', placeholder: 'напр. 30' });
+  const weightCard = document.createElement('div');
+  weightCard.className = 'card';
+  weightCard.appendChild(weight.el);
+
+  // Б/Ж/У: при редактировании «порционной» позиции показываем значения на 1 порцию
+  const pv0 = startPortion ? r1(food.per100.p * food.portion / 100) : (food?.per100.p ?? '');
+  const fv0 = startPortion ? r1(food.per100.f * food.portion / 100) : (food?.per100.f ?? '');
+  const cv0 = startPortion ? r1(food.per100.c * food.portion / 100) : (food?.per100.c ?? '');
+  const p = field('Белки', { value: pv0, inputmode: 'decimal' });
+  const f = field('Жиры', { value: fv0, inputmode: 'decimal' });
+  const c = field('Углеводы', { value: cv0, inputmode: 'decimal' });
+  const macroTitle = document.createElement('div');
+  macroTitle.className = 'section-title';
   const macroCard = document.createElement('div');
   macroCard.className = 'card';
   macroCard.append(p.el, f.el, c.el);
 
-  const recompute = () => kcalDisp.set(kcalFromMacros(num(p.input.value), num(f.input.value), num(c.input.value)));
-  [p, f, c].forEach((x) => (x.input.oninput = recompute));
-  recompute();
+  // карточка расчёта ккал (в режиме порции — плюс пересчёт на 100 г)
+  const kcalCard = document.createElement('div');
+  kcalCard.className = 'card';
+  kcalCard.innerHTML =
+    `<div class="calc"><span class="calc-label" data-k="label"></span>` +
+    `<span><span class="calc-val tnum" data-k="main">0</span><span class="calc-unit">ккал</span></span></div>` +
+    `<div class="totals-line" data-k="sub" hidden></div>`;
+  const kcLabel = $('[data-k="label"]', kcalCard);
+  const kcMain = $('[data-k="main"]', kcalCard);
+  const kcSub = $('[data-k="sub"]', kcalCard);
 
-  // необязательный вес порции — включает выбор единицы «порции» при добавлении
-  const portionTitle = document.createElement('div');
-  portionTitle.className = 'section-title';
-  portionTitle.textContent = 'Порция (необязательно)';
-  const portion = field('Вес 1 порции, г', { value: food?.portion || '', inputmode: 'decimal', placeholder: 'напр. 60' });
-  const portionCard = document.createElement('div');
-  portionCard.className = 'card';
-  portionCard.appendChild(portion.el);
+  const applyMode = () => {
+    basis.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.m === mode));
+    weightCard.style.display = mode === 'portion' ? '' : 'none';
+    macroTitle.textContent = mode === 'portion' ? 'Б/Ж/У на 1 порцию' : 'Б/Ж/У на 100 г';
+  };
+  const recompute = () => {
+    const pv = num(p.input.value), fv = num(f.input.value), cv = num(c.input.value);
+    if (mode === 'portion') {
+      kcLabel.textContent = 'Ккал порции';
+      kcMain.textContent = kcalFromMacros(pv, fv, cv);
+      const w = num(weight.input.value), k = w > 0 ? 100 / w : 0;
+      const p100 = r1(pv * k), f100 = r1(fv * k), c100 = r1(cv * k);
+      kcSub.hidden = false;
+      kcSub.innerHTML = `на 100 г: <b class="tnum">${kcalFromMacros(p100, f100, c100)}</b> ккал · Б ${p100} · Ж ${f100} · У ${c100}`;
+    } else {
+      kcLabel.textContent = 'Ккал (на 100 г)';
+      kcMain.textContent = kcalFromMacros(pv, fv, cv);
+      kcSub.hidden = true;
+    }
+  };
+  [p, f, c, weight].forEach((x) => (x.input.oninput = recompute));
+  basis.querySelectorAll('button').forEach((b) => (b.onclick = () => {
+    if (b.dataset.m === mode) return;
+    mode = b.dataset.m; haptic();
+    if (mode === 'portion' && !num(weight.input.value)) weight.input.value = 100;
+    applyMode(); recompute();
+  }));
 
   const saveBtn = button(editing ? 'Сохранить' : 'Создать');
   saveBtn.classList.add('btn-add');
-  content.append(nameCard, hint, kcalDisp.card, macroCard, portionTitle, portionCard, saveBtn);
+  content.append(nameCard, basis, weightCard, macroTitle, macroCard, kcalCard, saveBtn);
+
+  applyMode();
+  recompute();
 
   if (editing) {
     const delBtn = button('Удалить позицию', 'danger');
@@ -575,12 +619,19 @@ function openFoodEditor(food, onSaved) {
     const nm = name.input.value.trim();
     if (!nm) { name.input.focus(); return; }
     const pv = num(p.input.value), fv = num(f.input.value), cv = num(c.input.value);
-    const saved = S.upsertFood({
-      id: food?.id,
-      name: nm,
-      per100: { kcal: kcalFromMacros(pv, fv, cv), p: pv, f: fv, c: cv },
-      portion: num(portion.input.value),
-    });
+    let per100, portionVal;
+    if (mode === 'portion') {
+      const w = num(weight.input.value);
+      if (!w) { weight.input.focus(); return; }
+      const k = 100 / w;
+      const p100 = r1(pv * k), f100 = r1(fv * k), c100 = r1(cv * k);
+      per100 = { kcal: kcalFromMacros(p100, f100, c100), p: p100, f: f100, c: c100 };
+      portionVal = w;
+    } else {
+      per100 = { kcal: kcalFromMacros(pv, fv, cv), p: pv, f: fv, c: cv };
+      portionVal = 0;
+    }
+    const saved = S.upsertFood({ id: food?.id, name: nm, per100, portion: portionVal });
     haptic('success');
     sheet.close();
     if (nav.tab === 'catalog') renderCatalog();
