@@ -1,7 +1,7 @@
 // ui.js — рендер экранов, нижние листы (sheets), навигация, Telegram UI.
 
 import * as S from './state.js';
-import { scale, sumDay, recipeTotals, progress, kcalFromMacros } from './nutrition.js';
+import { scale, sumDay, progress, kcalFromMacros } from './nutrition.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -74,7 +74,6 @@ function entryName(e, cat) {
 const nav = {
   tab: 'diary',
   date: todayStr(),
-  catalogSeg: 'foods', // 'foods' | 'recipes'
 };
 
 // ════════════════════════════════════════════════════════════
@@ -233,7 +232,7 @@ function openAddEntry() {
 
   const quickBtn = button('Ввести КБЖУ вручную', 'secondary');
   quickBtn.style.marginBottom = '8px';
-  const createBtn = button('+ Создать продукт', 'secondary');
+  const createBtn = button('+ Создать позицию', 'secondary');
   createBtn.style.marginBottom = '8px';
 
   const list = document.createElement('div');
@@ -246,27 +245,22 @@ function openAddEntry() {
 
   const renderList = () => {
     const q = search.value.trim().toLowerCase();
-    const foods = [...S.store.foods.values()].map((x) => ({ ...x, _type: 'food' }));
-    const recipes = [...S.store.recipes.values()].map((x) => ({ ...x, _type: 'recipe' }));
-    let items = [...recipes, ...foods].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    let items = [...S.store.foods.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     if (q) items = items.filter((x) => x.name.toLowerCase().includes(q));
 
     list.innerHTML = items.length
-      ? items.map((x) => `<button class="row" data-type="${x._type}" data-id="${x.id}">
+      ? items.map((x) => `<button class="row" data-id="${x.id}">
             <div class="row-main">
-              <div class="row-title">${esc(x.name)}${x._type === 'recipe' ? ' <span class="muted">· рецепт</span>' : ''}</div>
+              <div class="row-title">${esc(x.name)}</div>
               <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div>
             </div>${ICON_CHEVRON}
           </button>`).join('')
-      : `<div class="empty">Ничего не найдено.<br>Создайте новый продукт.</div>`;
+      : `<div class="empty">Ничего не найдено.<br>Создайте новую позицию.</div>`;
 
     list.querySelectorAll('[data-id]').forEach((row) => {
       row.onclick = () => {
         haptic();
-        const item = row.dataset.type === 'recipe'
-          ? S.store.recipes.get(row.dataset.id)
-          : S.store.foods.get(row.dataset.id);
-        openGramsStep(item, row.dataset.type, sheet);
+        openGramsStep(S.store.foods.get(row.dataset.id), 'food', sheet);
       };
     });
   };
@@ -453,18 +447,14 @@ function openEditQuickEntry(entryId) {
 }
 
 // ════════════════════════════════════════════════════════════
-//  ЭКРАН: КАТАЛОГ (Продукты / Рецепты)
+//  ЭКРАН: КАТАЛОГ (плоский список позиций с КБЖУ)
 // ════════════════════════════════════════════════════════════
 function renderCatalog() {
   screenEl.innerHTML = `
     <h1 class="large-title">Каталог</h1>
-    <div class="segmented">
-      <button data-seg="foods" class="${nav.catalogSeg === 'foods' ? 'active' : ''}">Продукты</button>
-      <button data-seg="recipes" class="${nav.catalogSeg === 'recipes' ? 'active' : ''}">Рецепты</button>
-    </div>
     <input class="search" id="cat-search" placeholder="Поиск" />
     <div class="card" id="cat-list"></div>
-    <button class="fab" id="fab-new" aria-label="Создать">
+    <button class="fab" id="fab-new" aria-label="Добавить позицию">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
     </button>
   `;
@@ -474,42 +464,21 @@ function renderCatalog() {
 
   const renderList = () => {
     const q = searchEl.value.trim().toLowerCase();
-    if (nav.catalogSeg === 'foods') {
-      let items = [...S.store.foods.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-      if (q) items = items.filter((x) => x.name.toLowerCase().includes(q));
-      listEl.innerHTML = items.length
-        ? items.map((x) => `<button class="row" data-id="${x.id}">
-              <div class="row-main"><div class="row-title">${esc(x.name)}</div>
-              <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div></div>${ICON_CHEVRON}
-            </button>`).join('')
-        : `<div class="empty">Нет продуктов.<br>Нажмите «+», чтобы добавить.</div>`;
-      listEl.querySelectorAll('[data-id]').forEach((row) => {
-        row.onclick = () => { haptic(); openFoodEditor(S.store.foods.get(row.dataset.id)); };
-      });
-    } else {
-      let items = [...S.store.recipes.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-      if (q) items = items.filter((x) => x.name.toLowerCase().includes(q));
-      listEl.innerHTML = items.length
-        ? items.map((x) => `<button class="row" data-id="${x.id}">
-              <div class="row-main"><div class="row-title">${esc(x.name)}</div>
-              <div class="row-sub">${x.totalGrams} г · ${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div></div>${ICON_CHEVRON}
-            </button>`).join('')
-        : `<div class="empty">Нет рецептов.<br>Соберите блюдо из продуктов.</div>`;
-      listEl.querySelectorAll('[data-id]').forEach((row) => {
-        row.onclick = () => { haptic(); openRecipeEditor(S.store.recipes.get(row.dataset.id)); };
-      });
-    }
+    let items = [...S.store.foods.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    if (q) items = items.filter((x) => x.name.toLowerCase().includes(q));
+    listEl.innerHTML = items.length
+      ? items.map((x) => `<button class="row" data-id="${x.id}">
+            <div class="row-main"><div class="row-title">${esc(x.name)}</div>
+            <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div></div>${ICON_CHEVRON}
+          </button>`).join('')
+      : `<div class="empty">Пока пусто.<br>Нажмите «+», чтобы добавить позицию.</div>`;
+    listEl.querySelectorAll('[data-id]').forEach((row) => {
+      row.onclick = () => { haptic(); openFoodEditor(S.store.foods.get(row.dataset.id)); };
+    });
   };
 
   searchEl.oninput = renderList;
-  screenEl.querySelectorAll('[data-seg]').forEach((b) => {
-    b.onclick = () => { haptic(); nav.catalogSeg = b.dataset.seg; renderCatalog(); };
-  });
-  $('#fab-new').onclick = () => {
-    haptic();
-    if (nav.catalogSeg === 'foods') openFoodEditor(null);
-    else openRecipeEditor(null);
-  };
+  $('#fab-new').onclick = () => { haptic(); openFoodEditor(null); };
   renderList();
 }
 
@@ -546,14 +515,14 @@ function openFoodEditor(food, onSaved) {
   content.append(nameCard, hint, kcalDisp.card, macroCard, saveBtn);
 
   if (editing) {
-    const delBtn = button('Удалить продукт', 'danger');
+    const delBtn = button('Удалить позицию', 'danger');
     delBtn.style.marginTop = '8px';
     delBtn.onclick = async () => {
       const u = S.foodUsage(food.id);
-      if (u.recipes || u.entries) {
+      if (u.entries) {
         const ok = await confirmAsync(
-          `Продукт используется: рецептов — ${u.recipes}, записей — ${u.entries}. ` +
-          `Удалить? Эти данные перестанут учитываться.`);
+          `Позиция используется в дневнике (записей: ${u.entries}). ` +
+          `Удалить? Эти записи перестанут учитываться.`);
         if (!ok) return;
       }
       S.deleteFood(food.id);
@@ -565,7 +534,7 @@ function openFoodEditor(food, onSaved) {
     content.appendChild(delBtn);
   }
 
-  const sheet = openSheet(editing ? 'Продукт' : 'Новый продукт', content);
+  const sheet = openSheet(editing ? 'Позиция' : 'Новая позиция', content);
 
   saveBtn.onclick = () => {
     const nm = name.input.value.trim();
@@ -582,145 +551,6 @@ function openFoodEditor(food, onSaved) {
     if (onSaved) onSaved(saved);
   };
   setTimeout(() => name.input.focus(), 100);
-}
-
-// ── лист: редактор рецепта ──────────────────────────────────
-function openRecipeEditor(recipe) {
-  const editing = !!recipe;
-  // рабочая копия ингредиентов
-  let ingredients = recipe ? recipe.ingredients.map((i) => ({ ...i })) : [];
-
-  const content = document.createElement('div');
-  const name = field('Название', { value: recipe?.name || '', placeholder: 'Напр. Овсянка с бананом' });
-  const nameCard = document.createElement('div');
-  nameCard.className = 'card';
-  nameCard.appendChild(name.el);
-
-  const ingTitle = document.createElement('div');
-  ingTitle.className = 'section-title';
-  ingTitle.textContent = 'Ингредиенты';
-
-  const ingCard = document.createElement('div');
-  ingCard.className = 'card';
-
-  const addIngBtn = button('+ Добавить ингредиент', 'secondary');
-  addIngBtn.style.marginTop = '8px';
-
-  const totals = document.createElement('div');
-  totals.className = 'totals-line';
-
-  const saveBtn = button(editing ? 'Сохранить' : 'Создать');
-  saveBtn.classList.add('btn-add');
-
-  content.append(nameCard, ingTitle, ingCard, addIngBtn, totals, saveBtn);
-
-  if (editing) {
-    const delBtn = button('Удалить рецепт', 'danger');
-    delBtn.style.marginTop = '8px';
-    delBtn.onclick = () => {
-      S.deleteRecipe(recipe.id);
-      haptic('warning');
-      sheet.close();
-      renderCatalog();
-    };
-    content.appendChild(delBtn);
-  }
-
-  const sheet = openSheet(editing ? 'Рецепт' : 'Новый рецепт', content);
-
-  const renderIngredients = () => {
-    if (!ingredients.length) {
-      ingCard.innerHTML = `<div class="empty">Добавьте продукты в рецепт.</div>`;
-    } else {
-      ingCard.innerHTML = ingredients.map((ing, idx) => {
-        const food = S.store.foods.get(ing.foodId);
-        return `<div class="ingr-row">
-            <span class="ingr-name">${esc(food ? food.name : '— удалён —')}</span>
-            <span class="ingr-grams tnum">${ing.grams} г</span>
-            <button class="ingr-del" data-idx="${idx}" aria-label="Убрать">×</button>
-          </div>`;
-      }).join('');
-      ingCard.querySelectorAll('.ingr-del').forEach((b) => {
-        b.onclick = () => { haptic(); ingredients.splice(+b.dataset.idx, 1); renderIngredients(); };
-      });
-    }
-    const t = recipeTotals(ingredients, S.store.foods);
-    totals.innerHTML = `Всего ${t.totalGrams} г · <b class="tnum">${t.total.kcal} ккал</b><br>` +
-      `<span class="muted">на 100 г:</span> <b class="tnum">${t.per100.kcal}</b> ккал · Б ${t.per100.p} · Ж ${t.per100.f} · У ${t.per100.c}`;
-  };
-
-  addIngBtn.onclick = () => { haptic(); openIngredientPicker((foodId, grams) => {
-    ingredients.push({ foodId, grams });
-    renderIngredients();
-  }); };
-
-  saveBtn.onclick = () => {
-    const nm = name.input.value.trim();
-    if (!nm) { name.input.focus(); return; }
-    if (!ingredients.length) return;
-    S.upsertRecipe({ id: recipe?.id, name: nm, ingredients });
-    haptic('success');
-    sheet.close();
-    renderCatalog();
-  };
-
-  renderIngredients();
-  setTimeout(() => name.input.focus(), 100);
-}
-
-// ── лист: выбор ингредиента (продукт + граммы) ──────────────
-function openIngredientPicker(onPick) {
-  const content = document.createElement('div');
-  const search = document.createElement('input');
-  search.className = 'search';
-  search.placeholder = 'Выберите продукт';
-  const createBtn = button('+ Создать продукт', 'secondary');
-  createBtn.style.marginBottom = '8px';
-  const list = document.createElement('div');
-  list.className = 'card';
-  content.append(search, createBtn, list);
-  const sheet = openSheet('Ингредиент', content);
-
-  const renderList = () => {
-    const q = search.value.trim().toLowerCase();
-    let items = [...S.store.foods.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-    if (q) items = items.filter((x) => x.name.toLowerCase().includes(q));
-    list.innerHTML = items.length
-      ? items.map((x) => `<button class="row" data-id="${x.id}">
-            <div class="row-main"><div class="row-title">${esc(x.name)}</div>
-            <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div></div>${ICON_CHEVRON}
-          </button>`).join('')
-      : `<div class="empty">Нет продуктов.<br>Создайте новый.</div>`;
-    list.querySelectorAll('[data-id]').forEach((row) => {
-      row.onclick = () => { haptic(); askGrams(S.store.foods.get(row.dataset.id)); };
-    });
-  };
-
-  const askGrams = (food) => {
-    const c2 = document.createElement('div');
-    const g = field('Граммы', { value: 100, inputmode: 'decimal' });
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.appendChild(g.el);
-    const ok = button('Добавить в рецепт');
-    ok.classList.add('btn-add');
-    c2.append(card, ok);
-    const gs = openSheet(food.name, c2);
-    ok.onclick = () => {
-      const grams = num(g.input.value);
-      if (!grams) return;
-      onPick(food.id, grams);
-      haptic('success');
-      gs.close();
-      sheet.close();
-    };
-    setTimeout(() => g.input.select(), 100);
-  };
-
-  createBtn.onclick = () => { haptic(); openFoodEditor(null, (food) => askGrams(food)); };
-  search.oninput = renderList;
-  renderList();
-  setTimeout(() => search.focus(), 100);
 }
 
 // ════════════════════════════════════════════════════════════
