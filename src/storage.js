@@ -1,65 +1,59 @@
-// storage.js — единый интерфейс хранилища поверх Telegram CloudStorage
-// с фоллбэком на localStorage (для обычного браузера / разработки).
+// storage.js — единый интерфейс хранилища. Приоритет бэкендов:
+//   1) Supabase   — если задан config.js и есть Telegram initData (боевой режим)
+//   2) CloudStorage — если открыто в Telegram (запасной, пока Supabase не настроен)
+//   3) localStorage — обычный браузер / разработка
 //
-// CloudStorage хранит строки. Мы сериализуем значения в JSON.
-// Лимиты Telegram: до 1024 ключей, значение ≤ 4096 байт, ключ ≤ 128 символов.
+// Каждый бэкенд реализует loadAll() → { ключ: значение }, setItem(key, value),
+// removeItem(key). Ключи: 'settings', 'food:<id>', 'recipe:<id>', 'day:<дата>'.
+
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const tg = window.Telegram?.WebApp;
-const cloud = tg?.CloudStorage;
-// telegram-web-app.js грузится и в обычном браузере, создавая заглушку WebApp,
-// где методы CloudStorage есть, но при вызове бросают WebAppMethodUnsupported.
-// Поэтому проверяем не только наличие метода, но и реальный запуск в Telegram
-// (есть initData) и версию Bot API ≥ 6.9 (когда появился CloudStorage).
-const useCloud = !!(
-  cloud &&
-  typeof cloud.getKeys === 'function' &&
-  tg.initData &&
-  tg.isVersionAtLeast?.('6.9')
-);
+const initData = tg?.initData || '';
 
+// ── localStorage ────────────────────────────────────────────
 const LS_PREFIX = 'kkal:';
-
-// ── localStorage-реализация (фоллбэк) ───────────────────────
 const lsBackend = {
-  getKeys() {
-    const keys = [];
+  name: 'local',
+  async loadAll() {
+    const out = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith(LS_PREFIX)) keys.push(k.slice(LS_PREFIX.length));
+      if (!k || !k.startsWith(LS_PREFIX)) continue;
+      try { out[k.slice(LS_PREFIX.length)] = JSON.parse(localStorage.getItem(k)); } catch { /* skip */ }
     }
-    return Promise.resolve(keys);
+    return out;
   },
-  getItems(keys) {
-    const out = {};
-    for (const k of keys) out[k] = localStorage.getItem(LS_PREFIX + k) ?? '';
-    return Promise.resolve(out);
-  },
-  setItem(key, value) {
-    localStorage.setItem(LS_PREFIX + key, value);
-    return Promise.resolve();
-  },
-  removeItem(key) {
-    localStorage.removeItem(LS_PREFIX + key);
-    return Promise.resolve();
-  },
+  async setItem(key, value) { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); },
+  async removeItem(key) { localStorage.removeItem(LS_PREFIX + key); },
 };
 
-// ── CloudStorage-реализация (промисификация коллбэков) ──────
+// ── Telegram CloudStorage ───────────────────────────────────
+const cloud = tg?.CloudStorage;
+const cloudUsable = !!(cloud && typeof cloud.getKeys === 'function' && initData && tg.isVersionAtLeast?.('6.9'));
 const cloudBackend = {
-  getKeys() {
+  name: 'cloud',
+  loadAll() {
     return new Promise((resolve, reject) => {
-      cloud.getKeys((err, keys) => (err ? reject(err) : resolve(keys || [])));
-    });
-  },
-  getItems(keys) {
-    if (!keys.length) return Promise.resolve({});
-    return new Promise((resolve, reject) => {
-      cloud.getItems(keys, (err, values) => (err ? reject(err) : resolve(values || {})));
+      cloud.getKeys((err, keys) => {
+        if (err) return reject(err);
+        if (!keys || !keys.length) return resolve({});
+        cloud.getItems(keys, (err2, values) => {
+          if (err2) return reject(err2);
+          const out = {};
+          for (const k of keys) {
+            const v = values?.[k];
+            if (v == null || v === '') continue;
+            try { out[k] = JSON.parse(v); } catch { /* skip */ }
+          }
+          resolve(out);
+        });
+      });
     });
   },
   setItem(key, value) {
     return new Promise((resolve, reject) => {
-      cloud.setItem(key, value, (err) => (err ? reject(err) : resolve()));
+      cloud.setItem(key, JSON.stringify(value), (err) => (err ? reject(err) : resolve()));
     });
   },
   removeItem(key) {
@@ -69,33 +63,40 @@ const cloudBackend = {
   },
 };
 
-const backend = useCloud ? cloudBackend : lsBackend;
+// ── Supabase (через Edge Function "kkal") ───────────────────
+const supaUsable = /^https:\/\/.+\.supabase\.co\/?$/.test(SUPABASE_URL || '')
+  && !!SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY'
+  && !!initData;
 
-export const isCloud = useCloud;
+const FUNCTION_URL = `${(SUPABASE_URL || '').replace(/\/$/, '')}/functions/v1/kkal`;
 
-// Загрузить всё содержимое хранилища как { ключ: распарсенное_значение }.
-// Битые/пустые значения пропускаем.
-export async function loadAll() {
-  const keys = await backend.getKeys();
-  if (!keys.length) return {};
-  const raw = await backend.getItems(keys);
-  const out = {};
-  for (const k of keys) {
-    const v = raw[k];
-    if (v == null || v === '') continue;
-    try {
-      out[k] = JSON.parse(v);
-    } catch {
-      /* пропускаем нечитаемое значение */
-    }
-  }
-  return out;
+async function supaCall(payload) {
+  const res = await fetch(FUNCTION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // anon-ключ нужен шлюзу Supabase; настоящая авторизация — по initData внутри функции
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ ...payload, initData }),
+  });
+  if (!res.ok) throw new Error('supabase ' + res.status + ' ' + (await res.text().catch(() => '')));
+  return res.json();
 }
 
-export function setItem(key, value) {
-  return backend.setItem(key, JSON.stringify(value));
-}
+const supabaseBackend = {
+  name: 'supabase',
+  loadAll() { return supaCall({ action: 'loadAll' }); },
+  setItem(key, value) { return supaCall({ action: 'set', key, value }); },
+  removeItem(key) { return supaCall({ action: 'remove', key }); },
+};
 
-export function removeItem(key) {
-  return backend.removeItem(key);
-}
+// ── выбор бэкенда ───────────────────────────────────────────
+const backend = supaUsable ? supabaseBackend : cloudUsable ? cloudBackend : lsBackend;
+
+export const backendName = backend.name; // 'supabase' | 'cloud' | 'local'
+
+export function loadAll() { return backend.loadAll(); }
+export function setItem(key, value) { return backend.setItem(key, value); }
+export function removeItem(key) { return backend.removeItem(key); }

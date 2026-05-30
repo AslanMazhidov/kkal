@@ -759,10 +759,13 @@ function renderGoal() {
     catch { /* showPopup не поддержан в старой версии клиента */ }
   };
 
-  import('./storage.js').then(({ isCloud }) => {
-    $('#storage-note').textContent = isCloud
-      ? 'Данные хранятся в Telegram и синхронизируются между вашими устройствами.'
-      : 'Данные хранятся локально в этом браузере (Telegram CloudStorage недоступен).';
+  import('./storage.js').then(({ backendName }) => {
+    const notes = {
+      supabase: 'Данные хранятся в базе Supabase — резервируются и доступны с любого устройства.',
+      cloud: 'Данные хранятся в Telegram и синхронизируются между вашими устройствами.',
+      local: 'Данные хранятся локально в этом браузере (только для разработки).',
+    };
+    $('#storage-note').textContent = notes[backendName] || notes.local;
   });
 }
 
