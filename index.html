@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>КБЖУ</title>
+  <link rel="icon" href="data:," />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Контент экранов рендерится сюда -->
+  <main id="screen" class="screen"></main>
+
+  <!-- Нижняя таб-навигация -->
+  <nav id="tabbar" class="tabbar">
+    <button class="tab" data-tab="diary" aria-label="Дневник">
+      <svg viewBox="0 0 24 24" class="tab-ico"><path d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm3 5h8M8 13h8M8 17h5"/></svg>
+      <span>Дневник</span>
+    </button>
+    <button class="tab" data-tab="catalog" aria-label="Каталог">
+      <svg viewBox="0 0 24 24" class="tab-ico"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <span>Каталог</span>
+    </button>
+    <button class="tab" data-tab="goal" aria-label="Цель">
+      <svg viewBox="0 0 24 24" class="tab-ico"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>Цель</span>
+    </button>
+  </nav>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
