@@ -730,25 +730,30 @@ function renderGoal() {
   const goal = S.store.settings.goal;
   screenEl.innerHTML = `<h1 class="large-title">Цель</h1>
     <div class="section-title">Дневная норма</div>
-    <div id="goal-card" class="card"></div>
+    <div id="goal-mount"></div>
     <button class="btn btn-add" id="goal-save">Сохранить</button>
     <div class="section-title">О приложении</div>
     <div class="totals-line muted" id="storage-note"></div>`;
 
-  const card = $('#goal-card');
-  const kcal = field('Ккал', { value: goal.kcal || '', inputmode: 'decimal' });
+  const mount = $('#goal-mount');
+  const kcalDisp = calcDisplay('Ккал (по Б/Ж/У)');
   const p = field('Белки, г', { value: goal.protein || '', inputmode: 'decimal' });
   const f = field('Жиры, г', { value: goal.fat || '', inputmode: 'decimal' });
   const c = field('Углеводы, г', { value: goal.carbs || '', inputmode: 'decimal' });
-  card.append(kcal.el, p.el, f.el, c.el);
+  const macroCard = document.createElement('div');
+  macroCard.className = 'card';
+  macroCard.style.marginTop = '8px';
+  macroCard.append(p.el, f.el, c.el);
+
+  const recompute = () => kcalDisp.set(kcalFromMacros(num(p.input.value), num(f.input.value), num(c.input.value)));
+  [p, f, c].forEach((x) => (x.input.oninput = recompute));
+  recompute();
+
+  mount.append(kcalDisp.card, macroCard);
 
   $('#goal-save').onclick = () => {
-    S.setGoal({
-      kcal: num(kcal.input.value),
-      protein: num(p.input.value),
-      fat: num(f.input.value),
-      carbs: num(c.input.value),
-    });
+    const pv = num(p.input.value), fv = num(f.input.value), cv = num(c.input.value);
+    S.setGoal({ kcal: kcalFromMacros(pv, fv, cv), protein: pv, fat: fv, carbs: cv });
     haptic('success');
     try { tg?.showPopup?.({ message: 'Цель сохранена', buttons: [{ type: 'ok' }] }); }
     catch { /* showPopup не поддержан в старой версии клиента */ }
