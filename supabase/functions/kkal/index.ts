@@ -103,6 +103,11 @@ Deno.serve(async (req) => {
   const userId = await verify(body.initData ?? "");
   if (!userId) return json({ error: "unauthorized" }, 401);
 
+  // Регистрируем пользователя для напоминаний (chat_id = user_id для личного чата).
+  // enabled не трогаем при конфликте, чтобы уважать ручное отключение.
+  db.from("reminders").upsert({ user_id: userId, chat_id: userId }, { onConflict: "user_id", ignoreDuplicates: false })
+    .then(() => {}, () => {});
+
   try {
     if (body.action === "loadAll") return json(await loadAll(userId));
     if (body.action === "set") { await setKey(userId, body.key, body.value); return json({ ok: true }); }

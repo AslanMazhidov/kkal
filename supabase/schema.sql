@@ -39,8 +39,16 @@ create table if not exists public.days (
   primary key (user_id, date)
 );
 
+-- Подписка на напоминания бота (chat_id = user_id для личного чата).
+create table if not exists public.reminders (
+  user_id bigint  primary key,
+  chat_id bigint  not null,
+  enabled boolean not null default true
+);
+
 -- Включаем RLS и НЕ создаём публичных политик → anon-ключ к таблицам не имеет доступа.
-alter table public.settings enable row level security;
-alter table public.foods    enable row level security;
-alter table public.recipes  enable row level security;
-alter table public.days     enable row level security;
+alter table public.settings  enable row level security;
+alter table public.foods     enable row level security;
+alter table public.recipes   enable row level security;
+alter table public.days      enable row level security;
+alter table public.reminders enable row level security;
