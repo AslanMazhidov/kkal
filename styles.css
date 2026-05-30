@@ -87,7 +87,7 @@ body {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--hint);
-  margin: 24px 4px 8px;
+  margin: 24px 16px 8px; /* выровнено по тексту карточек (inset) */
 }
 
 /* ── Сгруппированные списки (inset grouped) ──────────────── */
@@ -96,6 +96,10 @@ body {
   border-radius: var(--radius);
   overflow: hidden;
 }
+/* Воздух между стоящими подряд блоками-карточками (без разделяющего заголовка) */
+.card + .card,
+.card + .segmented,
+.segmented + .card { margin-top: 10px; }
 
 .row {
   display: flex;
@@ -221,7 +225,6 @@ body {
 .segmented {
   display: flex; gap: 2px; padding: 2px;
   background: var(--separator); border-radius: 9px;
-  margin-bottom: 16px;
 }
 .segmented button {
   flex: 1; border: none; background: transparent; cursor: pointer;

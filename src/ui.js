@@ -234,7 +234,7 @@ function openAddEntry() {
   const content = document.createElement('div');
   const search = document.createElement('input');
   search.className = 'search';
-  search.placeholder = 'Поиск продукта или рецепта';
+  search.placeholder = 'Поиск позиции';
 
   const quickBtn = button('Ввести КБЖУ вручную', 'secondary');
   quickBtn.style.marginBottom = '8px';
@@ -604,7 +604,6 @@ function renderGoal() {
   const c = field('Углеводы, г', { value: goal.carbs || '', inputmode: 'decimal' });
   const macroCard = document.createElement('div');
   macroCard.className = 'card';
-  macroCard.style.marginTop = '8px';
   macroCard.append(p.el, f.el, c.el);
 
   const recompute = () => kcalDisp.set(kcalFromMacros(num(p.input.value), num(f.input.value), num(c.input.value)));
