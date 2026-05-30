@@ -1,7 +1,7 @@
 // ui.js — рендер экранов, нижние листы (sheets), навигация, Telegram UI.
 
 import * as S from './state.js';
-import { scale, sumDay, progress, kcalFromMacros } from './nutrition.js';
+import { scale, sumDay, progress, kcalFromMacros, entryAmountKbju } from './nutrition.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -62,17 +62,17 @@ const ICON_CHEVRON = '<svg class="chevron" width="8" height="14" viewBox="0 0 8 
 function entryNutrition(e, cat) {
   if (e.refType === 'quick') return { kcal: e.kcal || 0, p: e.p || 0, f: e.f || 0, c: e.c || 0 };
   const item = e.refType === 'recipe' ? cat.recipes.get(e.refId) : cat.foods.get(e.refId);
-  return item ? scale(item.per100, e.grams) : { kcal: 0, p: 0, f: 0, c: 0 };
+  return item ? entryAmountKbju(item, e) : { kcal: 0, p: 0, f: 0, c: 0 };
 }
 function entryName(e, cat) {
   if (e.refType === 'quick') return (e.name && e.name.trim()) || 'Быстрая запись';
   const item = e.refType === 'recipe' ? cat.recipes.get(e.refId) : cat.foods.get(e.refId);
   return item ? item.name : '— удалено —';
 }
-// Подпись количества: «150 г» или «2 порц · 120 г».
+// Подпись количества: «150 г» или «2 порц».
 function entryAmount(e) {
-  if (e.unit === 'portion') return `${e.qty} порц · ${e.grams} г`;
-  return `${e.grams} г`;
+  if (e.unit === 'portion') return `${e.qty} порц`;
+  return `${e.grams ?? e.qty} г`;
 }
 
 // ── состояние навигации ──────────────────────────────────────
@@ -257,7 +257,7 @@ function openAddEntry() {
       ? items.map((x) => `<button class="row" data-id="${x.id}">
             <div class="row-main">
               <div class="row-title">${esc(x.name)}</div>
-              <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div>
+              <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">${x.unit === 'portion' ? '/ порция' : '/ 100 г'}</span></div>
             </div>${ICON_CHEVRON}
           </button>`).join('')
       : `<div class="empty">Ничего не найдено.<br>Создайте новую позицию.</div>`;
@@ -279,21 +279,10 @@ function openAddEntry() {
 // ── общий блок «количество»: переключатель Граммы/Порции + ввод ─
 // Возвращает { frag, focus(), read() → {qty, unit, grams} }.
 function buildQtyControls(item, init) {
-  const hasPortion = (item?.portion || 0) > 0;
-  let unit = init?.unit || (hasPortion ? 'portion' : 'g');
-  if (unit === 'portion' && !hasPortion) unit = 'g';
+  const unit = item?.unit === 'portion' ? 'portion' : 'g';
 
   const frag = document.createDocumentFragment();
-
-  let seg = null;
-  if (hasPortion) {
-    seg = document.createElement('div');
-    seg.className = 'segmented';
-    seg.innerHTML = `<button data-u="g">Граммы</button><button data-u="portion">Порции</button>`;
-    frag.appendChild(seg);
-  }
-
-  const qf = field('Граммы', { inputmode: 'decimal' });
+  const qf = field(unit === 'portion' ? 'Порции' : 'Граммы', { inputmode: 'decimal' });
   const card = document.createElement('div');
   card.className = 'card';
   card.appendChild(qf.el);
@@ -301,31 +290,23 @@ function buildQtyControls(item, init) {
   preview.className = 'totals-line';
   frag.append(card, preview);
 
-  const gramsOf = () => (unit === 'portion' ? num(qf.input.value) * (item?.portion || 0) : num(qf.input.value));
   const refresh = () => {
-    qf.el.querySelector('label').textContent = unit === 'portion' ? 'Порции' : 'Граммы';
-    if (seg) seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.u === unit));
     if (!item) { preview.textContent = 'Позиция удалена из каталога.'; return; }
-    const g = gramsOf();
-    const n = scale(item.per100, g);
-    const note = unit === 'portion' ? ` (${Math.round(g)} г)` : '';
-    preview.innerHTML = `Итого${note}: <b class="tnum">${n.kcal} ккал</b> · Б ${n.p} · Ж ${n.f} · У ${n.c}`;
+    const qty = num(qf.input.value);
+    const n = entryAmountKbju(item, { unit, qty, grams: unit === 'g' ? qty : undefined });
+    preview.innerHTML = `Итого: <b class="tnum">${n.kcal} ккал</b> · Б ${n.p} · Ж ${n.f} · У ${n.c}`;
   };
   qf.input.oninput = refresh;
-  if (seg) seg.querySelectorAll('button').forEach((b) => (b.onclick = () => {
-    if (b.dataset.u === unit) return;
-    unit = b.dataset.u; haptic();
-    qf.input.value = unit === 'portion' ? 1 : 100;
-    refresh();
-  }));
-
   qf.input.value = init?.qty ?? (unit === 'portion' ? 1 : 100);
   refresh();
 
   return {
     frag,
     focus: () => qf.input.select(),
-    read: () => ({ qty: num(qf.input.value), unit, grams: gramsOf() }),
+    read: () => {
+      const qty = num(qf.input.value);
+      return { qty, unit, grams: unit === 'g' ? qty : undefined };
+    },
   };
 }
 
@@ -495,7 +476,7 @@ function renderCatalog() {
     listEl.innerHTML = items.length
       ? items.map((x) => `<button class="row" data-id="${x.id}">
             <div class="row-main"><div class="row-title">${esc(x.name)}</div>
-            <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">/ 100 г</span></div></div>${ICON_CHEVRON}
+            <div class="row-sub">${kbjuMini(x.per100)} <span class="muted">${x.unit === 'portion' ? '/ порция' : '/ 100 г'}</span></div></div>${ICON_CHEVRON}
           </button>`).join('')
       : `<div class="empty">Пока пусто.<br>Нажмите «+», чтобы добавить позицию.</div>`;
     listEl.querySelectorAll('[data-id]').forEach((row) => {
@@ -519,76 +500,50 @@ function openFoodEditor(food, onSaved) {
   nameCard.className = 'card';
   nameCard.appendChild(name.el);
 
-  const r1 = (n) => Math.round(n * 10) / 10;
-  const startPortion = (food?.portion || 0) > 0;
-  let mode = startPortion ? 'portion' : '100g'; // основа ввода Б/Ж/У
+  let mode = food?.unit === 'portion' ? 'portion' : '100g'; // основа ввода Б/Ж/У
 
   // переключатель основы: на 100 г или на порцию
   const basis = document.createElement('div');
   basis.className = 'segmented';
   basis.innerHTML = `<button data-m="100g">На 100 г</button><button data-m="portion">На порцию</button>`;
 
-  // вес порции (виден только в режиме «на порцию»)
-  const weight = field('Вес 1 порции, г', { value: startPortion ? food.portion : '', inputmode: 'decimal', placeholder: 'напр. 30' });
-  const weightCard = document.createElement('div');
-  weightCard.className = 'card';
-  weightCard.appendChild(weight.el);
-
-  // Б/Ж/У: при редактировании «порционной» позиции показываем значения на 1 порцию
-  const pv0 = startPortion ? r1(food.per100.p * food.portion / 100) : (food?.per100.p ?? '');
-  const fv0 = startPortion ? r1(food.per100.f * food.portion / 100) : (food?.per100.f ?? '');
-  const cv0 = startPortion ? r1(food.per100.c * food.portion / 100) : (food?.per100.c ?? '');
-  const p = field('Белки', { value: pv0, inputmode: 'decimal' });
-  const f = field('Жиры', { value: fv0, inputmode: 'decimal' });
-  const c = field('Углеводы', { value: cv0, inputmode: 'decimal' });
+  // Б/Ж/У — в выбранной основе (на 100 г или на 1 порцию); значения хранятся как есть
+  const p = field('Белки', { value: food?.per100.p ?? '', inputmode: 'decimal' });
+  const f = field('Жиры', { value: food?.per100.f ?? '', inputmode: 'decimal' });
+  const c = field('Углеводы', { value: food?.per100.c ?? '', inputmode: 'decimal' });
   const macroTitle = document.createElement('div');
   macroTitle.className = 'section-title';
   const macroCard = document.createElement('div');
   macroCard.className = 'card';
   macroCard.append(p.el, f.el, c.el);
 
-  // карточка расчёта ккал (в режиме порции — плюс пересчёт на 100 г)
+  // карточка расчёта ккал
   const kcalCard = document.createElement('div');
   kcalCard.className = 'card';
   kcalCard.innerHTML =
     `<div class="calc"><span class="calc-label" data-k="label"></span>` +
-    `<span><span class="calc-val tnum" data-k="main">0</span><span class="calc-unit">ккал</span></span></div>` +
-    `<div class="totals-line" data-k="sub" hidden></div>`;
+    `<span><span class="calc-val tnum" data-k="main">0</span><span class="calc-unit">ккал</span></span></div>`;
   const kcLabel = $('[data-k="label"]', kcalCard);
   const kcMain = $('[data-k="main"]', kcalCard);
-  const kcSub = $('[data-k="sub"]', kcalCard);
 
   const applyMode = () => {
     basis.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.m === mode));
-    weightCard.style.display = mode === 'portion' ? '' : 'none';
     macroTitle.textContent = mode === 'portion' ? 'Б/Ж/У на 1 порцию' : 'Б/Ж/У на 100 г';
+    kcLabel.textContent = mode === 'portion' ? 'Ккал порции' : 'Ккал (на 100 г)';
   };
   const recompute = () => {
-    const pv = num(p.input.value), fv = num(f.input.value), cv = num(c.input.value);
-    if (mode === 'portion') {
-      kcLabel.textContent = 'Ккал порции';
-      kcMain.textContent = kcalFromMacros(pv, fv, cv);
-      const w = num(weight.input.value), k = w > 0 ? 100 / w : 0;
-      const p100 = r1(pv * k), f100 = r1(fv * k), c100 = r1(cv * k);
-      kcSub.hidden = false;
-      kcSub.innerHTML = `на 100 г: <b class="tnum">${kcalFromMacros(p100, f100, c100)}</b> ккал · Б ${p100} · Ж ${f100} · У ${c100}`;
-    } else {
-      kcLabel.textContent = 'Ккал (на 100 г)';
-      kcMain.textContent = kcalFromMacros(pv, fv, cv);
-      kcSub.hidden = true;
-    }
+    kcMain.textContent = kcalFromMacros(num(p.input.value), num(f.input.value), num(c.input.value));
   };
-  [p, f, c, weight].forEach((x) => (x.input.oninput = recompute));
+  [p, f, c].forEach((x) => (x.input.oninput = recompute));
   basis.querySelectorAll('button').forEach((b) => (b.onclick = () => {
     if (b.dataset.m === mode) return;
     mode = b.dataset.m; haptic();
-    if (mode === 'portion' && !num(weight.input.value)) weight.input.value = 100;
-    applyMode(); recompute();
+    applyMode();
   }));
 
   const saveBtn = button(editing ? 'Сохранить' : 'Создать');
   saveBtn.classList.add('btn-add');
-  content.append(nameCard, basis, weightCard, macroTitle, macroCard, kcalCard, saveBtn);
+  content.append(nameCard, basis, macroTitle, macroCard, kcalCard, saveBtn);
 
   applyMode();
   recompute();
@@ -619,19 +574,8 @@ function openFoodEditor(food, onSaved) {
     const nm = name.input.value.trim();
     if (!nm) { name.input.focus(); return; }
     const pv = num(p.input.value), fv = num(f.input.value), cv = num(c.input.value);
-    let per100, portionVal;
-    if (mode === 'portion') {
-      const w = num(weight.input.value);
-      if (!w) { weight.input.focus(); return; }
-      const k = 100 / w;
-      const p100 = r1(pv * k), f100 = r1(fv * k), c100 = r1(cv * k);
-      per100 = { kcal: kcalFromMacros(p100, f100, c100), p: p100, f: f100, c: c100 };
-      portionVal = w;
-    } else {
-      per100 = { kcal: kcalFromMacros(pv, fv, cv), p: pv, f: fv, c: cv };
-      portionVal = 0;
-    }
-    const saved = S.upsertFood({ id: food?.id, name: nm, per100, portion: portionVal });
+    const per100 = { kcal: kcalFromMacros(pv, fv, cv), p: pv, f: fv, c: cv };
+    const saved = S.upsertFood({ id: food?.id, name: nm, per100, unit: mode === 'portion' ? 'portion' : 'g' });
     haptic('success');
     sheet.close();
     if (nav.tab === 'catalog') renderCatalog();

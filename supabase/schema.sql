@@ -18,7 +18,7 @@ create table if not exists public.foods (
   p       numeric not null default 0,
   f       numeric not null default 0,
   c       numeric not null default 0,
-  portion numeric not null default 0   -- вес 1 порции в граммах (0 = не задано)
+  unit    text    not null default 'g' -- 'g' (Б/Ж/У на 100 г) | 'portion' (на 1 порцию)
 );
 create index if not exists foods_user_idx on public.foods(user_id);
 

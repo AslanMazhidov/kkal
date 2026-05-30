@@ -62,7 +62,7 @@ async function setKey(userId: number, key: string, value: any) {
     await db.from("settings").upsert({ user_id: userId, goal: value?.goal ?? {}, updated_at: new Date().toISOString() });
   } else if (key.startsWith("food:")) {
     const p = value?.per100 ?? {};
-    await db.from("foods").upsert({ id: value.id, user_id: userId, name: value.name, kcal: p.kcal ?? 0, p: p.p ?? 0, f: p.f ?? 0, c: p.c ?? 0, portion: value.portion ?? 0 });
+    await db.from("foods").upsert({ id: value.id, user_id: userId, name: value.name, kcal: p.kcal ?? 0, p: p.p ?? 0, f: p.f ?? 0, c: p.c ?? 0, unit: value.unit ?? "g" });
   } else if (key.startsWith("recipe:")) {
     await db.from("recipes").upsert({ id: value.id, user_id: userId, name: value.name, ingredients: value.ingredients ?? [], total_grams: value.totalGrams ?? 0, per100: value.per100 ?? {} });
   } else if (key.startsWith("day:")) {
@@ -87,7 +87,7 @@ async function loadAll(userId: number) {
     db.from("days").select("*").eq("user_id", userId),
   ]);
   if (s.data) out["settings"] = { goal: s.data.goal };
-  for (const x of f.data ?? []) out[`food:${x.id}`] = { id: x.id, name: x.name, per100: { kcal: Number(x.kcal), p: Number(x.p), f: Number(x.f), c: Number(x.c) }, portion: Number(x.portion) };
+  for (const x of f.data ?? []) out[`food:${x.id}`] = { id: x.id, name: x.name, per100: { kcal: Number(x.kcal), p: Number(x.p), f: Number(x.f), c: Number(x.c) }, unit: x.unit ?? "g" };
   for (const x of r.data ?? []) out[`recipe:${x.id}`] = { id: x.id, name: x.name, ingredients: x.ingredients, totalGrams: Number(x.total_grams), per100: x.per100 };
   for (const x of d.data ?? []) out[`day:${x.date}`] = { entries: x.entries };
   return out;

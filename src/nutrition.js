@@ -20,21 +20,36 @@ export function scale(per100, grams) {
   };
 }
 
+// КБЖУ записи дневника по позиции и количеству.
+// item.unit: 'g' — per100 на 100 г, считаем по граммам; 'portion' — per100 на 1 порцию,
+// считаем по числу порций (e.qty).
+export function entryAmountKbju(item, e) {
+  if (item.unit === 'portion') {
+    const q = e.qty || 0;
+    return {
+      kcal: round(item.per100.kcal * q),
+      p: round1(item.per100.p * q),
+      f: round1(item.per100.f * q),
+      c: round1(item.per100.c * q),
+    };
+  }
+  return scale(item.per100, e.grams ?? e.qty ?? 0);
+}
+
 // Суммарное КБЖУ за день.
-// entries: [{ refType:'food'|'recipe', refId, grams }]
 // catalog: { foods: Map<id,food>, recipes: Map<id,recipe> }
-// Если ссылка «битая» (продукт удалён) — запись считается как 0, но не ломает сумму.
+// Если ссылка «битая» (позиция удалена) — запись считается как 0, но не ломает сумму.
 export function sumDay(entries, catalog) {
   const total = { kcal: 0, p: 0, f: 0, c: 0 };
   for (const e of entries || []) {
     let s;
     if (e.refType === 'quick') {
-      // быстрая запись хранит КБЖУ напрямую, без продукта
+      // быстрая запись хранит КБЖУ напрямую, без позиции
       s = { kcal: e.kcal || 0, p: e.p || 0, f: e.f || 0, c: e.c || 0 };
     } else {
       const item = e.refType === 'recipe' ? catalog.recipes.get(e.refId) : catalog.foods.get(e.refId);
       if (!item) continue;
-      s = scale(item.per100, e.grams);
+      s = entryAmountKbju(item, e);
     }
     total.kcal += s.kcal;
     total.p += s.p;

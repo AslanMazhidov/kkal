@@ -78,8 +78,8 @@ export function setGoal(goal) {
 }
 
 // ── foods ───────────────────────────────────────────────────
-export function upsertFood({ id, name, per100, portion }) {
-  const food = { id: id || newId(), name: name.trim(), per100, portion: portion || 0 };
+export function upsertFood({ id, name, per100, unit }) {
+  const food = { id: id || newId(), name: name.trim(), per100, unit: unit === 'portion' ? 'portion' : 'g' };
   store.foods.set(food.id, food);
   schedule('food:' + food.id, food);
   return food;
