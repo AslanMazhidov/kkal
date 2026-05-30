@@ -69,6 +69,11 @@ function entryName(e, cat) {
   const item = e.refType === 'recipe' ? cat.recipes.get(e.refId) : cat.foods.get(e.refId);
   return item ? item.name : '— удалено —';
 }
+// Подпись количества: «150 г» или «2 порц · 120 г».
+function entryAmount(e) {
+  if (e.unit === 'portion') return `${e.qty} порц · ${e.grams} г`;
+  return `${e.grams} г`;
+}
 
 // ── состояние навигации ──────────────────────────────────────
 const nav = {
@@ -163,7 +168,7 @@ function renderDiary() {
     ? day.entries.map((e) => {
         const n = entryNutrition(e, cat);
         const name = entryName(e, cat);
-        const sub = e.refType === 'quick' ? kbjuMini(n) : `${e.grams} г · ${kbjuMini(n)}`;
+        const sub = e.refType === 'quick' ? kbjuMini(n) : `${entryAmount(e)} · ${kbjuMini(n)}`;
         return `<button class="row" data-entry="${e.id}">
             <div class="row-main">
               <div class="row-title">${esc(name)}</div>
@@ -271,42 +276,79 @@ function openAddEntry() {
   setTimeout(() => search.focus(), 100);
 }
 
-// ── шаг: ввод граммов и добавление в дневник ────────────────
+// ── общий блок «количество»: переключатель Граммы/Порции + ввод ─
+// Возвращает { frag, focus(), read() → {qty, unit, grams} }.
+function buildQtyControls(item, init) {
+  const hasPortion = (item?.portion || 0) > 0;
+  let unit = init?.unit || (hasPortion ? 'portion' : 'g');
+  if (unit === 'portion' && !hasPortion) unit = 'g';
+
+  const frag = document.createDocumentFragment();
+
+  let seg = null;
+  if (hasPortion) {
+    seg = document.createElement('div');
+    seg.className = 'segmented';
+    seg.innerHTML = `<button data-u="g">Граммы</button><button data-u="portion">Порции</button>`;
+    frag.appendChild(seg);
+  }
+
+  const qf = field('Граммы', { inputmode: 'decimal' });
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.appendChild(qf.el);
+  const preview = document.createElement('div');
+  preview.className = 'totals-line';
+  frag.append(card, preview);
+
+  const gramsOf = () => (unit === 'portion' ? num(qf.input.value) * (item?.portion || 0) : num(qf.input.value));
+  const refresh = () => {
+    qf.el.querySelector('label').textContent = unit === 'portion' ? 'Порции' : 'Граммы';
+    if (seg) seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.u === unit));
+    if (!item) { preview.textContent = 'Позиция удалена из каталога.'; return; }
+    const g = gramsOf();
+    const n = scale(item.per100, g);
+    const note = unit === 'portion' ? ` (${Math.round(g)} г)` : '';
+    preview.innerHTML = `Итого${note}: <b class="tnum">${n.kcal} ккал</b> · Б ${n.p} · Ж ${n.f} · У ${n.c}`;
+  };
+  qf.input.oninput = refresh;
+  if (seg) seg.querySelectorAll('button').forEach((b) => (b.onclick = () => {
+    if (b.dataset.u === unit) return;
+    unit = b.dataset.u; haptic();
+    qf.input.value = unit === 'portion' ? 1 : 100;
+    refresh();
+  }));
+
+  qf.input.value = init?.qty ?? (unit === 'portion' ? 1 : 100);
+  refresh();
+
+  return {
+    frag,
+    focus: () => qf.input.select(),
+    read: () => ({ qty: num(qf.input.value), unit, grams: gramsOf() }),
+  };
+}
+
+// ── шаг: ввод количества и добавление в дневник ─────────────
 function openGramsStep(item, type, parentSheet) {
   if (!item) return;
   const content = document.createElement('div');
-  const def = type === 'recipe' && item.totalGrams ? item.totalGrams : 100;
-  const g = field('Граммы', { value: def, inputmode: 'decimal' });
-  const preview = document.createElement('div');
-  preview.className = 'totals-line';
-
-  const card = document.createElement('div');
-  card.className = 'card';
-  card.appendChild(g.el);
-
-  const addBtn = button('Добавить', '');
+  const qc = buildQtyControls(item, null);
+  const addBtn = button('Добавить');
   addBtn.classList.add('btn-add');
-
-  content.append(card, preview, addBtn);
+  content.append(qc.frag, addBtn);
   const sheet = openSheet(item.name, content);
 
-  const upd = () => {
-    const n = scale(item.per100, num(g.input.value));
-    preview.innerHTML = `Итого: <b class="tnum">${n.kcal} ккал</b> · Б ${n.p} · Ж ${n.f} · У ${n.c}`;
-  };
-  g.input.oninput = upd;
-  upd();
-
   addBtn.onclick = () => {
-    const grams = num(g.input.value);
-    if (!grams) return;
-    S.addEntry(nav.date, { refType: type, refId: item.id, grams });
+    const { qty, unit, grams } = qc.read();
+    if (!qty) return;
+    S.addEntry(nav.date, { refType: type, refId: item.id, grams, unit, qty });
     haptic('success');
     sheet.close();
     parentSheet?.close();
     renderDiary();
   };
-  setTimeout(() => g.input.select(), 100);
+  setTimeout(() => qc.focus(), 100);
 }
 
 // ── лист: редактировать запись дневника ─────────────────────
@@ -319,34 +361,18 @@ function openEditEntry(entryId) {
   const item = e.refType === 'recipe' ? cat.recipes.get(e.refId) : cat.foods.get(e.refId);
 
   const content = document.createElement('div');
-  const g = field('Граммы', { value: e.grams, inputmode: 'decimal' });
-  const card = document.createElement('div');
-  card.className = 'card';
-  card.appendChild(g.el);
-
-  const preview = document.createElement('div');
-  preview.className = 'totals-line';
-
+  const qc = buildQtyControls(item, { unit: e.unit || 'g', qty: e.qty ?? e.grams });
   const saveBtn = button('Сохранить');
   saveBtn.classList.add('btn-add');
   const delBtn = button('Удалить', 'danger');
   delBtn.style.marginTop = '8px';
-
-  content.append(card, preview, saveBtn, delBtn);
+  content.append(qc.frag, saveBtn, delBtn);
   const sheet = openSheet(item ? item.name : 'Запись', content);
 
-  const upd = () => {
-    if (!item) { preview.textContent = 'Продукт удалён из каталога.'; return; }
-    const n = scale(item.per100, num(g.input.value));
-    preview.innerHTML = `Итого: <b class="tnum">${n.kcal} ккал</b> · Б ${n.p} · Ж ${n.f} · У ${n.c}`;
-  };
-  g.input.oninput = upd;
-  upd();
-
   saveBtn.onclick = () => {
-    const grams = num(g.input.value);
-    if (!grams) return;
-    S.updateEntry(nav.date, entryId, grams);
+    const { qty, unit, grams } = qc.read();
+    if (!qty) return;
+    S.updateEntry(nav.date, entryId, { grams, unit, qty });
     haptic('success');
     sheet.close();
     renderDiary();
@@ -510,9 +536,18 @@ function openFoodEditor(food, onSaved) {
   [p, f, c].forEach((x) => (x.input.oninput = recompute));
   recompute();
 
+  // необязательный вес порции — включает выбор единицы «порции» при добавлении
+  const portionTitle = document.createElement('div');
+  portionTitle.className = 'section-title';
+  portionTitle.textContent = 'Порция (необязательно)';
+  const portion = field('Вес 1 порции, г', { value: food?.portion || '', inputmode: 'decimal', placeholder: 'напр. 60' });
+  const portionCard = document.createElement('div');
+  portionCard.className = 'card';
+  portionCard.appendChild(portion.el);
+
   const saveBtn = button(editing ? 'Сохранить' : 'Создать');
   saveBtn.classList.add('btn-add');
-  content.append(nameCard, hint, kcalDisp.card, macroCard, saveBtn);
+  content.append(nameCard, hint, kcalDisp.card, macroCard, portionTitle, portionCard, saveBtn);
 
   if (editing) {
     const delBtn = button('Удалить позицию', 'danger');
@@ -544,6 +579,7 @@ function openFoodEditor(food, onSaved) {
       id: food?.id,
       name: nm,
       per100: { kcal: kcalFromMacros(pv, fv, cv), p: pv, f: fv, c: cv },
+      portion: num(portion.input.value),
     });
     haptic('success');
     sheet.close();

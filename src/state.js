@@ -78,8 +78,8 @@ export function setGoal(goal) {
 }
 
 // ── foods ───────────────────────────────────────────────────
-export function upsertFood({ id, name, per100 }) {
-  const food = { id: id || newId(), name: name.trim(), per100 };
+export function upsertFood({ id, name, per100, portion }) {
+  const food = { id: id || newId(), name: name.trim(), per100, portion: portion || 0 };
   store.foods.set(food.id, food);
   schedule('food:' + food.id, food);
   return food;
@@ -138,9 +138,9 @@ export function getDay(date) {
   return store.days.get(date) || { entries: [] };
 }
 
-export function addEntry(date, { refType, refId, grams }) {
+export function addEntry(date, { refType, refId, grams, unit, qty }) {
   const d = ensureDay(date);
-  d.entries.push({ id: newId(), refType, refId, grams });
+  d.entries.push({ id: newId(), refType, refId, grams, unit: unit || 'g', qty: qty ?? grams });
   schedule('day:' + date, d);
 }
 
@@ -160,12 +160,14 @@ export function updateQuickEntry(date, entryId, { name, kcal, p, f, c }) {
   schedule('day:' + date, d);
 }
 
-export function updateEntry(date, entryId, grams) {
+export function updateEntry(date, entryId, { grams, unit, qty }) {
   const d = store.days.get(date);
   if (!d) return;
   const e = d.entries.find((x) => x.id === entryId);
   if (!e) return;
   e.grams = grams;
+  e.unit = unit || 'g';
+  e.qty = qty ?? grams;
   schedule('day:' + date, d);
 }
 
