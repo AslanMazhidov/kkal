@@ -593,9 +593,7 @@ function renderGoal() {
   screenEl.innerHTML = `<h1 class="large-title">Цель</h1>
     <div class="section-title">Дневная норма</div>
     <div id="goal-mount"></div>
-    <button class="btn btn-add" id="goal-save">Сохранить</button>
-    <div class="section-title">О приложении</div>
-    <div class="totals-line muted" id="storage-note"></div>`;
+    <button class="btn btn-add" id="goal-save">Сохранить</button>`;
 
   const mount = $('#goal-mount');
   const kcalDisp = calcDisplay('Ккал (по Б/Ж/У)');
@@ -619,15 +617,6 @@ function renderGoal() {
     try { tg?.showPopup?.({ message: 'Цель сохранена', buttons: [{ type: 'ok' }] }); }
     catch { /* showPopup не поддержан в старой версии клиента */ }
   };
-
-  import('./storage.js').then(({ backendName }) => {
-    const notes = {
-      supabase: 'Данные хранятся в базе Supabase — резервируются и доступны с любого устройства.',
-      cloud: 'Данные хранятся в Telegram и синхронизируются между вашими устройствами.',
-      local: 'Данные хранятся локально в этом браузере (только для разработки).',
-    };
-    $('#storage-note').textContent = notes[backendName] || notes.local;
-  });
 }
 
 // ════════════════════════════════════════════════════════════
