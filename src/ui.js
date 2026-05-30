@@ -34,16 +34,17 @@ function confirmAsync(message) {
   });
 }
 
-const todayStr = () => {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 10);
-};
+// Локальная дата YYYY-MM-DD (без UTC-сдвига, иначе в поясах UTC+X ломается ±день).
+const ymd = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const todayStr = () => ymd(new Date());
 
 function shiftDate(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d); // локальная полночь
+  dt.setDate(dt.getDate() + days);
+  return ymd(dt);
 }
 
 function fmtDateLabel(dateStr) {
